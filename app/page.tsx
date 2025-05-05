@@ -118,7 +118,7 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setSelectedTags([])
-
+ 
     try {
       // Use environment variable for the backend URL
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
