@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Search, SlidersHorizontal, X, Download, Tag, ArrowUpDown } from "lucide-react"
+import { Search, SlidersHorizontal, X, Download, Tag, ArrowUpDown, Github, Linkedin, Coffee } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -118,7 +118,7 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setSelectedTags([])
- 
+
     try {
       // Use environment variable for the backend URL
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -642,6 +642,38 @@ export default function Home() {
       <footer className="border-t border-gray-200 dark:border-gray-800 py-6 mt-12">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>Model Search Engine &copy; {new Date().getFullYear()}</p>
+          <div className="mt-4 flex justify-center space-x-6">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a href="https://www.linkedin.com/in/shayan-hashemi-5308081b1/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="text-muted-foreground hover:text-primary transition-colors">
+                  <Linkedin className="h-5 w-5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>LinkedIn</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a href="https://github.com/Shayan5422" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="text-muted-foreground hover:text-primary transition-colors">
+                  <Github className="h-5 w-5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>GitHub</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a href="https://buymeacoffee.com/shayanhshm" target="_blank" rel="noopener noreferrer" aria-label="Buy Me a Coffee" className="text-muted-foreground hover:text-primary transition-colors">
+                  <Coffee className="h-5 w-5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Buy Me a Coffee</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </footer>
     </div>
