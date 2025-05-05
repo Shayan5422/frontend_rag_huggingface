@@ -120,7 +120,12 @@ export default function Home() {
     setSelectedTags([])
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/search", {
+      // Use environment variable for the backend URL
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+      if (!backendUrl) {
+        throw new Error("Backend URL is not configured in environment variables.");
+      }
+      const response = await fetch(`${backendUrl}/search`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
