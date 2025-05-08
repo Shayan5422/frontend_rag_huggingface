@@ -28,6 +28,11 @@ interface ModelResult {
   downloads: number
   distance: number
   model_explanation_gemini?: string
+  release_year?: string
+  parameter_count?: string
+  is_fine_tuned?: boolean
+  category?: string
+  model_family?: string
 }
 
 interface GroupedModels {
@@ -129,11 +134,23 @@ export default function Home() {
   const [sortOption, setSortOption] = useState<string>("relevance")
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const [resultsLimit, setResultsLimit] = useState<number>(40)
+  
+  // New state variables for the additional filters
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [availableModelFamilies, setAvailableModelFamilies] = useState<string[]>([])
+  const [selectedModelFamilies, setSelectedModelFamilies] = useState<string[]>([])
+  const [selectedYears, setSelectedYears] = useState<string[]>([])
+  const [showFineTunedOnly, setShowFineTunedOnly] = useState<boolean>(false)
+  const [parameterFilter, setParameterFilter] = useState<string>("all")
 
   // Extract all unique tags from results
   useEffect(() => {
     if (results.length > 0) {
       const tags = new Set<string>()
+      const categories = new Set<string>()
+      const modelFamilies = new Set<string>()
+      const years = new Set<string>()
       let maxDownload = 0
 
       results.forEach((result) => {
@@ -144,12 +161,23 @@ export default function Home() {
             }
           })
         }
+        if (result.category) {
+          categories.add(result.category)
+        }
+        if (result.model_family) {
+          modelFamilies.add(result.model_family)
+        }
+        if (result.release_year) {
+          years.add(result.release_year)
+        }
         if (result.downloads > maxDownload) {
           maxDownload = result.downloads
         }
       })
 
       setAvailableTags(Array.from(tags).sort())
+      setAvailableCategories(Array.from(categories).sort())
+      setAvailableModelFamilies(Array.from(modelFamilies).sort())
       setMaxDownloads(maxDownload)
       setDownloadRange([0, maxDownload])
     }
@@ -162,6 +190,44 @@ export default function Home() {
     // Filter by tags if any selected
     if (selectedTags.length > 0) {
       filtered = filtered.filter((model) => model.tags && selectedTags.some((tag) => model.tags.includes(tag)))
+    }
+
+    // Filter by categories if any selected
+    if (selectedCategories.length > 0) {
+      filtered = filtered.filter((model) => model.category && selectedCategories.includes(model.category))
+    }
+
+    // Filter by model families if any selected
+    if (selectedModelFamilies.length > 0) {
+      filtered = filtered.filter((model) => model.model_family && selectedModelFamilies.includes(model.model_family))
+    }
+
+    // Filter by years if any selected
+    if (selectedYears.length > 0) {
+      filtered = filtered.filter((model) => model.release_year && selectedYears.includes(model.release_year))
+    }
+
+    // Filter by fine-tuned status if selected
+    if (showFineTunedOnly) {
+      filtered = filtered.filter((model) => model.is_fine_tuned === true)
+    }
+
+    // Filter by parameter count
+    if (parameterFilter !== "all") {
+      filtered = filtered.filter((model) => {
+        if (!model.parameter_count) return false;
+        
+        if (parameterFilter === "small" && model.parameter_count.includes("M")) {
+          return true;
+        } else if (parameterFilter === "medium" && 
+                 ((model.parameter_count.includes("M") && parseInt(model.parameter_count) >= 500) || 
+                  (model.parameter_count.includes("B") && parseFloat(model.parameter_count) < 5))) {
+          return true;
+        } else if (parameterFilter === "large" && model.parameter_count.includes("B") && parseFloat(model.parameter_count) >= 5) {
+          return true;
+        }
+        return false;
+      });
     }
 
     // Filter by download range
@@ -182,7 +248,7 @@ export default function Home() {
 
     setFilteredResults(filtered)
     setGroupedResults(groupModelsByBaseName(filtered))
-  }, [results, selectedTags, downloadRange, sortOption, resultsLimit])
+  }, [results, selectedTags, selectedCategories, selectedModelFamilies, selectedYears, showFineTunedOnly, parameterFilter, downloadRange, sortOption, resultsLimit])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -227,8 +293,25 @@ export default function Home() {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }
 
+  const toggleCategoryFilter = (category: string) => {
+    setSelectedCategories((prev) => (prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]))
+  }
+
+  const toggleModelFamilyFilter = (family: string) => {
+    setSelectedModelFamilies((prev) => (prev.includes(family) ? prev.filter((f) => f !== family) : [...prev, family]))
+  }
+
+  const toggleYearFilter = (year: string) => {
+    setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]))
+  }
+
   const clearFilters = () => {
     setSelectedTags([])
+    setSelectedCategories([])
+    setSelectedModelFamilies([])
+    setSelectedYears([])
+    setShowFineTunedOnly(false)
+    setParameterFilter("all")
     setDownloadRange([0, maxDownloads])
     setSortOption("relevance")
     setResultsLimit(40)
@@ -379,61 +462,131 @@ export default function Home() {
                           step={Math.max(1, Math.floor(maxDownloads / 100))}
                           value={downloadRange}
                           onValueChange={(value) => setDownloadRange(value as [number, number])}
-                          className="my-6"
                         />
                       </div>
 
-                      {/* Results Limit Filter */}
+                      {/* Categories Filter */}
+                      {availableCategories.length > 0 && (
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value="categories">
+                            <AccordionTrigger className="flex-row-reverse justify-end gap-2 font-medium">
+                              <span>Categories</span>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-2">
+                              <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {availableCategories.map((category) => (
+                                  <div key={category} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`category-${category}`}
+                                      checked={selectedCategories.includes(category)}
+                                      onCheckedChange={() => toggleCategoryFilter(category)}
+                                    />
+                                    <Label htmlFor={`category-${category}`} className="text-sm cursor-pointer flex-1">
+                                      {category}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      )}
+
+                      {/* Model Families Filter */}
+                      {availableModelFamilies.length > 0 && (
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value="modelFamilies">
+                            <AccordionTrigger className="flex-row-reverse justify-end gap-2 font-medium">
+                              <span>Model Families</span>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-2">
+                              <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {availableModelFamilies.map((family) => (
+                                  <div key={family} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`family-${family}`}
+                                      checked={selectedModelFamilies.includes(family)}
+                                      onCheckedChange={() => toggleModelFamilyFilter(family)}
+                                    />
+                                    <Label htmlFor={`family-${family}`} className="text-sm cursor-pointer flex-1">
+                                      {family}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      )}
+
+                      {/* Parameter Size Filter */}
                       <div className="space-y-4">
-                        <h4 className="font-medium flex items-center gap-2">
-                          <ArrowUpDown className="h-4 w-4" />
-                          Results Limit
-                        </h4>
-                        <Select 
-                          value={resultsLimit.toString()} 
-                          onValueChange={(val) => {
-                            const newLimit = Number(val);
-                            console.log(`Changing results limit from ${resultsLimit} to ${newLimit}`);
-                            setResultsLimit(newLimit);
-                          }}
-                        >
+                        <h4 className="font-medium flex items-center gap-2">Parameter Size</h4>
+                        <Select value={parameterFilter} onValueChange={setParameterFilter}>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Max results to display" />
+                            <SelectValue placeholder="All sizes" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="10">10 results</SelectItem>
-                            <SelectItem value="20">20 results</SelectItem>
-                            <SelectItem value="40">40 results</SelectItem>
-                            <SelectItem value="60">60 results</SelectItem>
-                            <SelectItem value="100">100 results</SelectItem>
+                            <SelectItem value="all">All sizes</SelectItem>
+                            <SelectItem value="small">Small (&lt; 500M)</SelectItem>
+                            <SelectItem value="medium">Medium (500M - 5B)</SelectItem>
+                            <SelectItem value="large">Large (&gt; 5B)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
-                      {/* Tags Filter */}
-                      <div className="space-y-4">
-                        <h4 className="font-medium flex items-center gap-2">
-                          <Tag className="h-4 w-4" />
-                          Tags
-                        </h4>
-                        <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 border rounded-md p-3 border-gray-200 dark:border-gray-800">
-                          {availableTags.map((tag) => (
-                            <div key={tag} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={`tag-${tag}`}
-                                checked={selectedTags.includes(tag)}
-                                onCheckedChange={() => toggleTagFilter(tag)}
-                              />
-                              <Label htmlFor={`tag-${tag}`} className="text-sm cursor-pointer flex-1 truncate">
-                                {tag}
-                              </Label>
-                            </div>
-                          ))}
+                      {/* Fine-tuned Filter */}
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="fine-tuned-only"
+                          checked={showFineTunedOnly}
+                          onCheckedChange={(checked) => setShowFineTunedOnly(checked === true)}
+                        />
+                        <Label htmlFor="fine-tuned-only" className="cursor-pointer">
+                          Show fine-tuned models only
+                        </Label>
+                      </div>
 
-                          {availableTags.length === 0 && (
-                            <p className="text-sm text-muted-foreground">No tags available</p>
-                          )}
-                        </div>
+                      {/* Existing Tag Filters */}
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="tags">
+                          <AccordionTrigger className="flex-row-reverse justify-end gap-2 font-medium">
+                            <Tag className="h-4 w-4" />
+                            <span>Tags</span>
+                          </AccordionTrigger>
+                          <AccordionContent className="pt-2">
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                              {availableTags.map((tag) => (
+                                <div key={tag} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`tag-${tag}`}
+                                    checked={selectedTags.includes(tag)}
+                                    onCheckedChange={() => toggleTagFilter(tag)}
+                                  />
+                                  <Label htmlFor={`tag-${tag}`} className="text-sm cursor-pointer flex-1">
+                                    {tag}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+
+                      {/* Results Limit Control */}
+                      <div className="space-y-4">
+                        <h4 className="font-medium">Results Limit</h4>
+                        <Select value={resultsLimit.toString()} onValueChange={(val) => setResultsLimit(parseInt(val))}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Show 40 results" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="20">Show 20 results</SelectItem>
+                            <SelectItem value="40">Show 40 results</SelectItem>
+                            <SelectItem value="60">Show 60 results</SelectItem>
+                            <SelectItem value="100">Show 100 results</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
@@ -561,11 +714,46 @@ export default function Home() {
                                   <h4 className="text-sm font-medium truncate" title={model.model_id}>
                                     {model.model_id}
                                   </h4>
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <Download className="h-3 w-3 text-muted-foreground" />
-                                    <p className="text-xs">{model.downloads.toLocaleString()}</p>
-                                    <ArrowUpDown className="h-3 w-3 text-muted-foreground ml-2" />
-                                    <p className="text-xs">Relevance: {(1 - model.distance).toFixed(2)}</p>
+                                  <div className="flex flex-wrap gap-2 items-center mb-4">
+                                    {/* Add badges for the new metadata */}
+                                    {model.category && (
+                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                        <span className="text-xs">Category:</span>
+                                        <span className="font-semibold">{model.category}</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    {model.model_family && (
+                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                        <span className="text-xs">Family:</span>
+                                        <span className="font-semibold">{model.model_family}</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    {model.parameter_count && (
+                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                        <span className="text-xs">Size:</span>
+                                        <span className="font-semibold">{model.parameter_count}</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    {model.release_year && (
+                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                        <span className="text-xs">Year:</span>
+                                        <span className="font-semibold">{model.release_year}</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    {model.is_fine_tuned && (
+                                      <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                        <span className="font-semibold">Fine-tuned</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                      <Download className="h-3 w-3" />
+                                      <span className="font-semibold">{formatDownloadCount(model.downloads)}</span>
+                                    </Badge>
                                   </div>
                                 </div>
                               ))}
@@ -582,13 +770,46 @@ export default function Home() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="pb-2">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Download className="h-4 w-4 text-muted-foreground" />
-                            <p className="text-sm font-medium">{models[0].downloads.toLocaleString()}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                            <p className="text-sm">Relevance: {(1 - models[0].distance).toFixed(2)}</p>
+                          <div className="flex flex-wrap gap-2 items-center mb-4">
+                            {/* Add badges for the new metadata */}
+                            {models[0].category && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Category:</span>
+                                <span className="font-semibold">{models[0].category}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].model_family && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Family:</span>
+                                <span className="font-semibold">{models[0].model_family}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].parameter_count && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Size:</span>
+                                <span className="font-semibold">{models[0].parameter_count}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].release_year && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Year:</span>
+                                <span className="font-semibold">{models[0].release_year}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].is_fine_tuned && (
+                              <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                <span className="font-semibold">Fine-tuned</span>
+                              </Badge>
+                            )}
+                            
+                            <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                              <Download className="h-3 w-3" />
+                              <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
+                            </Badge>
                           </div>
                         </CardContent>
                         <CardFooter>
@@ -703,15 +924,46 @@ export default function Home() {
                                     <h4 className="font-medium truncate" title={model.model_id}>
                                       {model.model_id}
                                     </h4>
-                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                      <div className="flex items-center gap-1">
-                                        <Download className="h-4 w-4" />
-                                        <span>{model.downloads.toLocaleString()}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <ArrowUpDown className="h-4 w-4" />
-                                        <span>Relevance: {(1 - model.distance).toFixed(2)}</span>
-                                      </div>
+                                    <div className="flex flex-wrap gap-2 items-center mb-4">
+                                      {/* Add badges for the new metadata */}
+                                      {model.category && (
+                                        <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                          <span className="text-xs">Category:</span>
+                                          <span className="font-semibold">{model.category}</span>
+                                        </Badge>
+                                      )}
+                                      
+                                      {model.model_family && (
+                                        <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                          <span className="text-xs">Family:</span>
+                                          <span className="font-semibold">{model.model_family}</span>
+                                        </Badge>
+                                      )}
+                                      
+                                      {model.parameter_count && (
+                                        <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                          <span className="text-xs">Size:</span>
+                                          <span className="font-semibold">{model.parameter_count}</span>
+                                        </Badge>
+                                      )}
+                                      
+                                      {model.release_year && (
+                                        <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                          <span className="text-xs">Year:</span>
+                                          <span className="font-semibold">{model.release_year}</span>
+                                        </Badge>
+                                      )}
+                                      
+                                      {model.is_fine_tuned && (
+                                        <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                          <span className="font-semibold">Fine-tuned</span>
+                                        </Badge>
+                                      )}
+                                      
+                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                        <Download className="h-3 w-3" />
+                                        <span className="font-semibold">{formatDownloadCount(model.downloads)}</span>
+                                      </Badge>
                                     </div>
                                   </div>
                                   <Button variant="outline" size="sm">
@@ -733,31 +985,46 @@ export default function Home() {
                           <h3 className="font-medium text-lg mb-1 truncate" title={models[0].model_id}>
                             {models[0].model_id}
                           </h3>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Download className="h-4 w-4" />
-                              <span>{models[0].downloads.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <ArrowUpDown className="h-4 w-4" />
-                              <span>Relevance: {(1 - models[0].distance).toFixed(2)}</span>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {models[0].tags && models[0].tags.length > 0 ? (
-                              models[0].tags.slice(0, 5).map((tag) => (
-                                <Badge key={tag} variant="secondary" className="text-xs">
-                                  {tag}
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No tags</span>
-                            )}
-                            {models[0].tags && models[0].tags.length > 5 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{models[0].tags.length - 5}
+                          <div className="flex flex-wrap gap-2 items-center mb-4">
+                            {/* Add badges for the new metadata */}
+                            {models[0].category && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Category:</span>
+                                <span className="font-semibold">{models[0].category}</span>
                               </Badge>
                             )}
+                            
+                            {models[0].model_family && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Family:</span>
+                                <span className="font-semibold">{models[0].model_family}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].parameter_count && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Size:</span>
+                                <span className="font-semibold">{models[0].parameter_count}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].release_year && (
+                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                <span className="text-xs">Year:</span>
+                                <span className="font-semibold">{models[0].release_year}</span>
+                              </Badge>
+                            )}
+                            
+                            {models[0].is_fine_tuned && (
+                              <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                <span className="font-semibold">Fine-tuned</span>
+                              </Badge>
+                            )}
+                            
+                            <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                              <Download className="h-3 w-3" />
+                              <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
+                            </Badge>
                           </div>
                         </div>
                         <Button variant="outline" size="sm" className="self-start sm:self-center">
