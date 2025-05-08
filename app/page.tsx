@@ -3,8 +3,9 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Search, SlidersHorizontal, X, Download, Tag, ArrowUpDown, Github, Linkedin, Coffee } from "lucide-react"
+import { Search, SlidersHorizontal, X, Download, Tag, ArrowUpDown, Github, Linkedin, Coffee, ChevronDown } from "lucide-react"
 import Image from "next/image"
+import ReactMarkdown from 'react-markdown'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 
 interface ModelResult {
   model_id: string
@@ -26,6 +28,10 @@ interface ModelResult {
   downloads: number
   distance: number
   model_explanation_gemini?: string
+}
+
+interface GroupedModels {
+  [key: string]: ModelResult[]
 }
 
 // --- Tag Filtering Configuration (mirrors backend) ---
@@ -43,10 +49,76 @@ function filterTagForDisplay(tag: string): boolean {
 }
 // --- End Tag Filtering Configuration ---
 
+// Get base model name (before the first '-')
+function getBaseModelName(modelId: string): string {
+  const parts = modelId.split('/')
+  const modelName = parts.length > 1 ? parts[1] : parts[0]
+  const baseName = modelName.split('-')[0]
+  return parts.length > 1 ? `${parts[0]}/${baseName}` : baseName
+}
+
+// Group models by their base name
+function groupModelsByBaseName(models: ModelResult[]): GroupedModels {
+  const grouped: GroupedModels = {}
+  
+  models.forEach(model => {
+    const baseName = getBaseModelName(model.model_id)
+    if (!grouped[baseName]) {
+      grouped[baseName] = []
+    }
+    grouped[baseName].push(model)
+  })
+  
+  return grouped
+}
+
+// Get stats for a group of models
+function getGroupStats(models: ModelResult[]) {
+  // Sort by relevance (lowest distance = highest relevance)
+  const sortedByRelevance = [...models].sort((a, b) => a.distance - b.distance)
+  const mostRelevantModel = sortedByRelevance[0]
+  
+  // Find min and max downloads
+  const minDownloads = Math.min(...models.map(m => m.downloads))
+  const maxDownloads = Math.max(...models.map(m => m.downloads))
+  
+  return {
+    minDownloads,
+    maxDownloads,
+    bestRelevance: mostRelevantModel.distance,
+    bestTags: mostRelevantModel.tags || []
+  }
+}
+
+// Format model description to handle newlines and formatting
+function formatModelDescription(description: string): string {
+  if (!description) return '';
+  
+  // Convert **text** to proper markdown bold syntax
+  description = description.replace(/\*\*(.*?)\*\*/g, '**$1**');
+  
+  // Convert basic HTML to markdown equivalents
+  description = description.replace(/<b>(.*?)<\/b>/g, '**$1**');
+  description = description.replace(/<i>(.*?)<\/i>/g, '*$1*');
+  description = description.replace(/<u>(.*?)<\/u>/g, '_$1_');
+  
+  // Make sure there are proper line breaks
+  description = description.replace(/\\n\\n/g, '\n\n');
+  description = description.replace(/\\n/g, '\n');
+  
+  // Handle headings
+  description = description.replace(/^# (.*?)$/gm, '# $1');
+  description = description.replace(/^## (.*?)$/gm, '## $1');
+  description = description.replace(/^### (.*?)$/gm, '### $1');
+  
+  return description;
+}
+
 export default function Home() {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<ModelResult[]>([])
   const [filteredResults, setFilteredResults] = useState<ModelResult[]>([])
+  const [groupedResults, setGroupedResults] = useState<GroupedModels>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<ModelResult | null>(null)
@@ -109,6 +181,7 @@ export default function Home() {
     console.log(`Applying results limit: ${resultsLimit}, filtered results: ${filtered.length}`)
 
     setFilteredResults(filtered)
+    setGroupedResults(groupModelsByBaseName(filtered))
   }, [results, selectedTags, downloadRange, sortOption, resultsLimit])
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -432,45 +505,112 @@ export default function Home() {
                     </Card>
                   ))
               ) : filteredResults.length > 0 ? (
-                filteredResults.map((model) => (
+                // Render grouped model results
+                Object.entries(groupedResults).map(([baseName, models]) => (
                   <Card
-                    key={model.model_id}
-                    className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all cursor-pointer group"
-                    onClick={() => setSelectedModel(model)}
+                    key={baseName}
+                    className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all"
                   >
-                    <CardHeader className="pb-2 group-hover:bg-gray-50 dark:group-hover:bg-gray-900 transition-colors">
-                      <CardTitle className="text-lg truncate" title={model.model_id}>
-                        {model.model_id}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pb-2">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Download className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">{model.downloads.toLocaleString()}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-sm">Relevance: {(1 - model.distance).toFixed(2)}</p>
-                      </div>
-                    </CardContent>
-                    <CardFooter>
-                      <div className="flex flex-wrap gap-1">
-                        {model.tags && model.tags.length > 0 ? (
-                          model.tags.slice(0, 3).map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No tags</span>
-                        )}
-                        {model.tags && model.tags.length > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{model.tags.length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                    </CardFooter>
+                    {models.length > 1 ? (
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value={baseName} className="border-none">
+                          <AccordionTrigger className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors flex justify-between hover:no-underline">
+                            <div className="flex-1">
+                              <h3 className="font-medium text-lg truncate text-left" title={baseName}>
+                                {baseName} <Badge variant="outline" className="ml-2">{models.length}</Badge>
+                              </h3>
+                              {(() => {
+                                const stats = getGroupStats(models);
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                      <div className="flex items-center gap-1">
+                                        <Download className="h-4 w-4" />
+                                        <span>{formatDownloadCount(stats.minDownloads)} - {formatDownloadCount(stats.maxDownloads)}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <ArrowUpDown className="h-4 w-4" />
+                                        <span>Relevance: {(1 - stats.bestRelevance).toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {stats.bestTags.filter(filterTagForDisplay).slice(0, 5).map((tag) => (
+                                        <Badge key={tag} variant="secondary" className="text-xs">
+                                          {tag}
+                                        </Badge>
+                                      ))}
+                                      {stats.bestTags.filter(filterTagForDisplay).length > 5 && (
+                                        <Badge variant="outline" className="text-xs">
+                                          +{stats.bestTags.filter(filterTagForDisplay).length - 5}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-3 px-6 pb-4">
+                              {models.map(model => (
+                                <div 
+                                  key={model.model_id} 
+                                  className="p-3 border border-gray-200 dark:border-gray-800 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900"
+                                  onClick={() => setSelectedModel(model)}
+                                >
+                                  <h4 className="text-sm font-medium truncate" title={model.model_id}>
+                                    {model.model_id}
+                                  </h4>
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <Download className="h-3 w-3 text-muted-foreground" />
+                                    <p className="text-xs">{model.downloads.toLocaleString()}</p>
+                                    <ArrowUpDown className="h-3 w-3 text-muted-foreground ml-2" />
+                                    <p className="text-xs">Relevance: {(1 - model.distance).toFixed(2)}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    ) : (
+                      // Single model case - just display as before
+                      <>
+                        <CardHeader className="pb-2 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer" onClick={() => setSelectedModel(models[0])}>
+                          <CardTitle className="text-lg truncate" title={models[0].model_id}>
+                            {models[0].model_id}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pb-2">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Download className="h-4 w-4 text-muted-foreground" />
+                            <p className="text-sm font-medium">{models[0].downloads.toLocaleString()}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                            <p className="text-sm">Relevance: {(1 - models[0].distance).toFixed(2)}</p>
+                          </div>
+                        </CardContent>
+                        <CardFooter>
+                          <div className="flex flex-wrap gap-1">
+                            {models[0].tags && models[0].tags.length > 0 ? (
+                              models[0].tags.slice(0, 3).map((tag) => (
+                                <Badge key={tag} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No tags</span>
+                            )}
+                            {models[0].tags && models[0].tags.length > 3 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{models[0].tags.length - 3}
+                              </Badge>
+                            )}
+                          </div>
+                        </CardFooter>
+                      </>
+                    )}
                   </Card>
                 ))
               ) : query.trim() !== "" ? (
@@ -506,48 +646,125 @@ export default function Home() {
                     </Card>
                   ))
               ) : filteredResults.length > 0 ? (
-                filteredResults.map((model) => (
+                // Render grouped model results in list view
+                Object.entries(groupedResults).map(([baseName, models]) => (
                   <Card
-                    key={model.model_id}
-                    className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all cursor-pointer group"
-                    onClick={() => setSelectedModel(model)}
+                    key={baseName}
+                    className="overflow-hidden border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all"
                   >
-                    <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-4 group-hover:bg-gray-50 dark:group-hover:bg-gray-900 transition-colors">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-lg mb-1 truncate" title={model.model_id}>
-                          {model.model_id}
-                        </h3>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Download className="h-4 w-4" />
-                            <span>{model.downloads.toLocaleString()}</span>
+                    {models.length > 1 ? (
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value={baseName} className="border-none">
+                          <AccordionTrigger className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors flex justify-between hover:no-underline">
+                            <div className="flex-1">
+                              <h3 className="font-medium text-lg truncate text-left" title={baseName}>
+                                {baseName} <Badge variant="outline" className="ml-2">{models.length}</Badge>
+                              </h3>
+                              {(() => {
+                                const stats = getGroupStats(models);
+                                return (
+                                  <>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                      <div className="flex items-center gap-1">
+                                        <Download className="h-4 w-4" />
+                                        <span>{formatDownloadCount(stats.minDownloads)} - {formatDownloadCount(stats.maxDownloads)}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <ArrowUpDown className="h-4 w-4" />
+                                        <span>Relevance: {(1 - stats.bestRelevance).toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {stats.bestTags.filter(filterTagForDisplay).slice(0, 5).map((tag) => (
+                                        <Badge key={tag} variant="secondary" className="text-xs">
+                                          {tag}
+                                        </Badge>
+                                      ))}
+                                      {stats.bestTags.filter(filterTagForDisplay).length > 5 && (
+                                        <Badge variant="outline" className="text-xs">
+                                          +{stats.bestTags.filter(filterTagForDisplay).length - 5}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-2 px-4 pb-4">
+                              {models.map(model => (
+                                <div 
+                                  key={model.model_id} 
+                                  className="p-3 border border-gray-200 dark:border-gray-800 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 flex justify-between items-center"
+                                  onClick={() => setSelectedModel(model)}
+                                >
+                                  <div className="flex-1">
+                                    <h4 className="font-medium truncate" title={model.model_id}>
+                                      {model.model_id}
+                                    </h4>
+                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                      <div className="flex items-center gap-1">
+                                        <Download className="h-4 w-4" />
+                                        <span>{model.downloads.toLocaleString()}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <ArrowUpDown className="h-4 w-4" />
+                                        <span>Relevance: {(1 - model.distance).toFixed(2)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button variant="outline" size="sm">
+                                    View Details
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    ) : (
+                      // Single model case - just display as before
+                      <div 
+                        className="p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
+                        onClick={() => setSelectedModel(models[0])}
+                      >
+                        <div className="flex-1">
+                          <h3 className="font-medium text-lg mb-1 truncate" title={models[0].model_id}>
+                            {models[0].model_id}
+                          </h3>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Download className="h-4 w-4" />
+                              <span>{models[0].downloads.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <ArrowUpDown className="h-4 w-4" />
+                              <span>Relevance: {(1 - models[0].distance).toFixed(2)}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <ArrowUpDown className="h-4 w-4" />
-                            <span>Relevance: {(1 - model.distance).toFixed(2)}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {model.tags && model.tags.length > 0 ? (
-                            model.tags.slice(0, 5).map((tag) => (
-                              <Badge key={tag} variant="secondary" className="text-xs">
-                                {tag}
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {models[0].tags && models[0].tags.length > 0 ? (
+                              models[0].tags.slice(0, 5).map((tag) => (
+                                <Badge key={tag} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No tags</span>
+                            )}
+                            {models[0].tags && models[0].tags.length > 5 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{models[0].tags.length - 5}
                               </Badge>
-                            ))
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No tags</span>
-                          )}
-                          {model.tags && model.tags.length > 5 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{model.tags.length - 5}
-                            </Badge>
-                          )}
+                            )}
+                          </div>
                         </div>
+                        <Button variant="outline" size="sm" className="self-start sm:self-center">
+                          View Details
+                        </Button>
                       </div>
-                      <Button variant="outline" size="sm" className="self-start sm:self-center">
-                        View Details
-                      </Button>
-                    </div>
+                    )}
                   </Card>
                 ))
               ) : query.trim() !== "" ? (
@@ -597,9 +814,27 @@ export default function Home() {
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-2">Generated Summary</h3>
                   {selectedModel.model_explanation_gemini ? (
-                    <p className="text-sm bg-primary/5 dark:bg-primary/10 p-3 rounded-md">
-                        {selectedModel.model_explanation_gemini}
-                    </p>
+                    <div className="text-sm bg-primary/5 dark:bg-primary/10 p-3 rounded-md prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown 
+                        components={{
+                          h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                          h2: ({node, ...props}) => <h2 className="text-lg font-bold mt-3 mb-2" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-md font-bold mt-3 mb-1" {...props} />,
+                          p: ({node, ...props}) => <p className="mb-2" {...props} />,
+                          ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2" {...props} />,
+                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2" {...props} />,
+                          li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                          strong: ({node, ...props}) => <strong className="font-bold" {...props} />,
+                          em: ({node, ...props}) => <em className="italic" {...props} />,
+                          a: ({node, ...props}) => <a className="text-primary underline" {...props} />,
+                          blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-primary/30 pl-4 italic" {...props} />,
+                          code: ({node, ...props}) => <code className="bg-muted px-1 py-0.5 rounded" {...props} />,
+                          pre: ({node, ...props}) => <pre className="bg-muted p-2 rounded overflow-x-auto my-2" {...props} />
+                        }}
+                      >
+                        {formatModelDescription(selectedModel.model_explanation_gemini)}
+                      </ReactMarkdown>
+                    </div>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">
                         No summary available.
