@@ -140,8 +140,8 @@ export default function Home() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [availableModelFamilies, setAvailableModelFamilies] = useState<string[]>([])
   const [selectedModelFamilies, setSelectedModelFamilies] = useState<string[]>([])
-  const [selectedYears, setSelectedYears] = useState<string[]>([])
   const [showFineTunedOnly, setShowFineTunedOnly] = useState<boolean>(false)
+  const [showNonFineTunedOnly, setShowNonFineTunedOnly] = useState<boolean>(false)
   const [parameterFilter, setParameterFilter] = useState<string>("all")
 
   // Extract all unique tags from results
@@ -150,7 +150,6 @@ export default function Home() {
       const tags = new Set<string>()
       const categories = new Set<string>()
       const modelFamilies = new Set<string>()
-      const years = new Set<string>()
       let maxDownload = 0
 
       results.forEach((result) => {
@@ -166,9 +165,6 @@ export default function Home() {
         }
         if (result.model_family) {
           modelFamilies.add(result.model_family)
-        }
-        if (result.release_year) {
-          years.add(result.release_year)
         }
         if (result.downloads > maxDownload) {
           maxDownload = result.downloads
@@ -202,14 +198,12 @@ export default function Home() {
       filtered = filtered.filter((model) => model.model_family && selectedModelFamilies.includes(model.model_family))
     }
 
-    // Filter by years if any selected
-    if (selectedYears.length > 0) {
-      filtered = filtered.filter((model) => model.release_year && selectedYears.includes(model.release_year))
-    }
-
     // Filter by fine-tuned status if selected
     if (showFineTunedOnly) {
       filtered = filtered.filter((model) => model.is_fine_tuned === true)
+    }
+    if (showNonFineTunedOnly) {
+      filtered = filtered.filter((model) => model.is_fine_tuned !== true)
     }
 
     // Filter by parameter count
@@ -248,7 +242,7 @@ export default function Home() {
 
     setFilteredResults(filtered)
     setGroupedResults(groupModelsByBaseName(filtered))
-  }, [results, selectedTags, selectedCategories, selectedModelFamilies, selectedYears, showFineTunedOnly, parameterFilter, downloadRange, sortOption, resultsLimit])
+  }, [results, selectedTags, selectedCategories, selectedModelFamilies, showFineTunedOnly, showNonFineTunedOnly, parameterFilter, downloadRange, sortOption, resultsLimit])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -301,16 +295,12 @@ export default function Home() {
     setSelectedModelFamilies((prev) => (prev.includes(family) ? prev.filter((f) => f !== family) : [...prev, family]))
   }
 
-  const toggleYearFilter = (year: string) => {
-    setSelectedYears((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]))
-  }
-
   const clearFilters = () => {
     setSelectedTags([])
     setSelectedCategories([])
     setSelectedModelFamilies([])
-    setSelectedYears([])
     setShowFineTunedOnly(false)
+    setShowNonFineTunedOnly(false)
     setParameterFilter("all")
     setDownloadRange([0, maxDownloads])
     setSortOption("relevance")
@@ -547,6 +537,18 @@ export default function Home() {
                         </Label>
                       </div>
 
+                      {/* Non-fine-tuned Filter */}
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="non-fine-tuned-only"
+                          checked={showNonFineTunedOnly}
+                          onCheckedChange={(checked) => setShowNonFineTunedOnly(checked === true)}
+                        />
+                        <Label htmlFor="non-fine-tuned-only" className="cursor-pointer">
+                          Show non-fine-tuned models only
+                        </Label>
+                      </div>
+
                       {/* Existing Tag Filters */}
                       <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="tags">
@@ -737,13 +739,6 @@ export default function Home() {
                                       </Badge>
                                     )}
                                     
-                                    {model.release_year && (
-                                      <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                                        <span className="text-xs">Year:</span>
-                                        <span className="font-semibold">{model.release_year}</span>
-                                      </Badge>
-                                    )}
-                                    
                                     {model.is_fine_tuned && (
                                       <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
                                         <span className="font-semibold">Fine-tuned</span>
@@ -793,24 +788,17 @@ export default function Home() {
                               </Badge>
                             )}
                             
-                            {models[0].release_year && (
-                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                                <span className="text-xs">Year:</span>
-                                <span className="font-semibold">{models[0].release_year}</span>
-                              </Badge>
-                            )}
-                            
-                            {models[0].is_fine_tuned && (
-                              <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
-                                <span className="font-semibold">Fine-tuned</span>
-                              </Badge>
-                            )}
-                            
-                            <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                              <Download className="h-3 w-3" />
-                              <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
-                            </Badge>
-                          </div>
+                                    {models[0].is_fine_tuned && (
+                                      <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                        <span className="font-semibold">Fine-tuned</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                      <Download className="h-3 w-3" />
+                                      <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
+                                    </Badge>
+                                  </div>
                         </CardContent>
                         <CardFooter>
                           <div className="flex flex-wrap gap-1">
@@ -947,13 +935,6 @@ export default function Home() {
                                         </Badge>
                                       )}
                                       
-                                      {model.release_year && (
-                                        <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                                          <span className="text-xs">Year:</span>
-                                          <span className="font-semibold">{model.release_year}</span>
-                                        </Badge>
-                                      )}
-                                      
                                       {model.is_fine_tuned && (
                                         <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
                                           <span className="font-semibold">Fine-tuned</span>
@@ -1008,24 +989,17 @@ export default function Home() {
                               </Badge>
                             )}
                             
-                            {models[0].release_year && (
-                              <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                                <span className="text-xs">Year:</span>
-                                <span className="font-semibold">{models[0].release_year}</span>
-                              </Badge>
-                            )}
-                            
-                            {models[0].is_fine_tuned && (
-                              <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
-                                <span className="font-semibold">Fine-tuned</span>
-                              </Badge>
-                            )}
-                            
-                            <Badge variant="outline" className="flex items-center gap-1 py-0.5">
-                              <Download className="h-3 w-3" />
-                              <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
-                            </Badge>
-                          </div>
+                                    {models[0].is_fine_tuned && (
+                                      <Badge variant="secondary" className="flex items-center gap-1 py-0.5">
+                                        <span className="font-semibold">Fine-tuned</span>
+                                      </Badge>
+                                    )}
+                                    
+                                    <Badge variant="outline" className="flex items-center gap-1 py-0.5">
+                                      <Download className="h-3 w-3" />
+                                      <span className="font-semibold">{formatDownloadCount(models[0].downloads)}</span>
+                                    </Badge>
+                                  </div>
                         </div>
                         <Button variant="outline" size="sm" className="self-start sm:self-center">
                           View Details
